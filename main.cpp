@@ -6,11 +6,6 @@
 // How many simulation steps to do before showing output
 static const int c_numSimulationSteps = 10;
 
-void Simulate()
-{
-	// TODO: this
-}
-
 int main(int argc, char** arg)
 {
 	CellPages board;
@@ -24,7 +19,7 @@ int main(int argc, char** arg)
 
 	// Simulate
 	for (int i = 0; i < c_numSimulationSteps; ++i)
-		Simulate();
+		board.Simulate();
 
 	// report the results
 	board.Print();

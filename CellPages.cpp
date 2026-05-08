@@ -197,3 +197,59 @@ void CellPages::Print() const
 		}
 	}
 }
+
+int CellPages::GetNeighborCount(int64_t cellX, int64_t cellY) const
+{
+	// Note: this could be a little more efficient by working with pages directly instead of using GetCellAlive() which finds the page for each call
+	int neighborCount = 0;
+
+	for (int64_t iy = -1; iy <= 1; ++iy)
+	{
+		for (int64_t ix = -1; ix <= 1; ++ix)
+		{
+			// Skip the cell
+			if (ix == 0 && iy == 0)
+				continue;
+
+			neighborCount += GetCellAlive(cellX + ix, cellY + iy) ? 1 : 0;
+		}
+	}
+
+	return neighborCount;
+}
+
+void CellPages::Simulate()
+{
+	// Note: this could be more efficient by working with the pages more directly, since the helpers do a lot of redundant work per call, but it would be more complex code.
+	CellPages newState;
+
+	// Simulate from the current state into the new state
+	for (const CellPage& page : m_cellPages)
+	{
+		for (int64_t cellYInPage = 0; cellYInPage < c_cellPageSize; ++cellYInPage)
+		{
+			for (int64_t cellXInPage = 0; cellXInPage < c_cellPageSize; ++cellXInPage)
+			{
+				int64_t cellX = page.pageX * c_cellPageSize + cellXInPage;
+				int64_t cellY = page.pageY * c_cellPageSize + cellYInPage;
+
+				int neighborCount = GetNeighborCount(cellX, cellY);
+
+				switch (neighborCount)
+				{
+					// active cells with 2 neighbors stay active. inactive cells with 2 neighbors stay inactive.
+					case 2: newState.SetCellAlive(cellX, cellY, GetCellAlive(cellX, cellY)); break;
+
+					// Cells with 3 neighbors become or stay active
+					case 3: newState.SetCellAlive(cellX, cellY, true); break;
+
+					// Cells with < 2 or > 3 neighbors become inactive
+					default: newState.SetCellAlive(cellX, cellY, false); break;
+				}
+			}
+		}
+	}
+
+	// Adopt the new state
+	m_cellPages = std::move(newState.m_cellPages);
+}
