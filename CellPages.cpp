@@ -4,30 +4,25 @@
 #include <fstream>
 #include <string>
 
-// Some static non members, so they can be defined here in the CPP and be inlined
-static inline void CellIndexToPageIndex(int64_t cellX, int64_t cellY, int64_t& pageX, int64_t& pageY)
+// Some anonymous namespace non members, so they can be defined here privately, and be inlined
+namespace
 {
-	// Handle negative values
-	pageX = (cellX >= 0) ? cellX / c_cellPageSize : (cellX - c_cellPageSize + 1) / c_cellPageSize;
-	pageY = (cellY >= 0) ? cellY / c_cellPageSize : (cellY - c_cellPageSize + 1) / c_cellPageSize;
-}
+	inline void CellIndexToPageIndex(int64_t cellX, int64_t cellY, int64_t& pageX, int64_t& pageY)
+	{
+		// Handle negative values
+		pageX = (cellX >= 0) ? cellX / c_cellPageSize : (cellX - c_cellPageSize + 1) / c_cellPageSize;
+		pageY = (cellY >= 0) ? cellY / c_cellPageSize : (cellY - c_cellPageSize + 1) / c_cellPageSize;
+	}
 
-static inline void CellIndexToByteAndBitIndex(int64_t cellX, int64_t cellY, int64_t& byteIndex, int64_t& bitIndex)
-{
-	// For negative coordinates, C++ modulo returns negative, so we need to normalize to [0, c_cellPageSize)
-	int64_t cellXInPage = ((cellX % c_cellPageSize) + c_cellPageSize) % c_cellPageSize;
-	int64_t cellYInPage = ((cellY % c_cellPageSize) + c_cellPageSize) % c_cellPageSize;
-	int64_t cellIndex = cellYInPage * c_cellPageSize + cellXInPage;
-	byteIndex = cellIndex / 8;
-	bitIndex = cellIndex % 8;
-}
-
-CellPages::~CellPages()
-{
-	// Free allocated memory
-	for (CellPage* page : m_cellPages)
-		delete page;
-	m_cellPages.clear(); // Not strictly necessary, but leaving invalid pointers laying around tends to cause problems as code changes.
+	inline void CellIndexToByteAndBitIndex(int64_t cellX, int64_t cellY, int64_t& byteIndex, int64_t& bitIndex)
+	{
+		// For negative coordinates, C++ modulo returns negative, so we need to normalize to [0, c_cellPageSize)
+		int64_t cellXInPage = ((cellX % c_cellPageSize) + c_cellPageSize) % c_cellPageSize;
+		int64_t cellYInPage = ((cellY % c_cellPageSize) + c_cellPageSize) % c_cellPageSize;
+		int64_t cellIndex = cellYInPage * c_cellPageSize + cellXInPage;
+		byteIndex = cellIndex / 8;
+		bitIndex = cellIndex % 8;
+	}
 }
 
 bool CellPages::Load(const char* filename)
@@ -73,7 +68,7 @@ bool CellPages::Load(const char* filename)
 }
 
 // Given a cell coordinate, returns the page that contains that cell, or nullptr if no page for that cell exists
-CellPages::CellPage* CellPages::GetPageForCell(int64_t cellX, int64_t cellY) const
+const CellPages::CellPage* CellPages::GetPageForCell(int64_t cellX, int64_t cellY) const
 {
 	// calculate what page the cell would be on
 	int64_t pageX, pageY;
@@ -81,18 +76,18 @@ CellPages::CellPage* CellPages::GetPageForCell(int64_t cellX, int64_t cellY) con
 
 	// binary search on pageX to see where to start looking for pageY
 	auto it = std::lower_bound(m_cellPages.begin(), m_cellPages.end(), pageX,
-		[](const CellPage* page, int64_t x)
+		[](const CellPage& page, int64_t x)
 		{
-			return page->pageX < x;
+			return page.pageX < x;
 		}
 	);
 
 	// While we have pages with the same pageX, look for our pageY
-	while (it != m_cellPages.end() && (*it)->pageX == pageX)
+	while (it != m_cellPages.end() && it->pageX == pageX)
 	{
 		// If we found it, we are done
-		if ((*it)->pageY == pageY)
-			return *it;
+		if (pageY == pageY)
+			return &(*it);
 
 		++it;
 	}
@@ -101,10 +96,15 @@ CellPages::CellPage* CellPages::GetPageForCell(int64_t cellX, int64_t cellY) con
 	return nullptr;
 }
 
+CellPages::CellPage* CellPages::GetPageForCell(int64_t cellX, int64_t cellY)
+{
+	return const_cast<CellPages::CellPage*>(const_cast<const CellPages*>(this)->GetPageForCell(cellX, cellY));
+}
+
 bool CellPages::GetCellAlive(int64_t cellX, int64_t cellY) const
 {
 	// Get the page that our cell is on
-	CellPage* page = GetPageForCell(cellX, cellY);
+	const CellPage* page = GetPageForCell(cellX, cellY);
 
 	// if there isn't a page for it, that means it isn't alive
 	if (!page)
@@ -128,24 +128,25 @@ void CellPages::SetCellAlive(int64_t cellX, int64_t cellY, bool alive)
 		// if there is no page, we need to make one
 		if (!page)
 		{
-			// Make a new page, setting the pageX and pageY and setting all cells inside to dead
-			CellPage* newPage = new CellPage();
-			CellIndexToPageIndex(cellX, cellY, newPage->pageX, newPage->pageY);
-			memset(newPage->cells, 0, c_bytesPerPage);
+			// add a new page to the end and then re-sort the list.
+			// Note: we could insert it in place for more efficiency.
+			m_cellPages.emplace_back();
+			CellPage& newPage = m_cellPages.back();
+			CellIndexToPageIndex(cellX, cellY, newPage.pageX, newPage.pageY);
+			memset(newPage.cells, 0, c_bytesPerPage);
 
-			// Add the new page to the list, in the proper location
-			auto it = std::lower_bound(m_cellPages.begin(), m_cellPages.end(), newPage,
-				[](const CellPage* a, const CellPage* b)
+			std::sort(m_cellPages.begin(), m_cellPages.end(),
+				[](const CellPage& a, const CellPage& b)
 				{
-					if (a->pageX != b->pageX)
-						return a->pageX < b->pageX;
-					return a->pageY < b->pageY;
+					if (a.pageX != b.pageX)
+						return a.pageX < b.pageX;
+					return a.pageY < b.pageY;
 				}
 			);
 
-			m_cellPages.insert(it, newPage);
-
-			page = newPage;
+			// Get the new page
+			// Note: if we inserted in place, we wouldn't need to do another binary search here, we'd know the index
+			page = GetPageForCell(cellX, cellY);
 		}
 
 		// Set the cell to alive
@@ -178,14 +179,14 @@ void CellPages::Print() const
 {
 	printf("#Life 1.06\n");
 
-	for (const CellPage* page : m_cellPages)
+	for (const CellPage& page : m_cellPages)
 	{
 		for (int64_t cellYInPage = 0; cellYInPage < c_cellPageSize; ++cellYInPage)
 		{
 			for (int64_t cellXInPage = 0; cellXInPage < c_cellPageSize; ++cellXInPage)
 			{
-				int64_t cellX = page->pageX * c_cellPageSize + cellXInPage;
-				int64_t cellY = page->pageY * c_cellPageSize + cellYInPage;
+				int64_t cellX = page.pageX * c_cellPageSize + cellXInPage;
+				int64_t cellY = page.pageY * c_cellPageSize + cellYInPage;
 				if (GetCellAlive(cellX, cellY))
 					printf("%zi %zi\n", cellX, cellY);
 

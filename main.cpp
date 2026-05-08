@@ -24,9 +24,7 @@ int main(int argc, char** arg)
 
 	// Simulate
 	for (int i = 0; i < c_numSimulationSteps; ++i)
-	{
 		Simulate();
-	}
 
 	// report the results
 	board.Print();
