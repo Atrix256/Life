@@ -1,4 +1,6 @@
 // Game of life, using Life 1.06 format as input (https://conwaylife.com/wiki/Life_1.06)
+// If you compare debug vs release you may wonder why debug is so slow. It's because I'm using STL and there are a lot of bounds checks and similar slowing it down.
+// In a real game engine, there'd be containers that were more suitable for debug builds, or a way to turn off the extra checks, or similar.
 
 #include "CellPages.h"
 #include <stdio.h>
