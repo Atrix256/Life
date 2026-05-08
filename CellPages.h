@@ -7,12 +7,13 @@
 
 // These parameters could be tuned for memory vs speed based on profiling usage cases.
 static const int64_t c_cellPageSize = 256; // this many cells squared per page
-static const int64_t c_bytesPerPage = c_cellPageSize * c_cellPageSize / 8;
+static const int64_t c_bytesPerPage = c_cellPageSize * c_cellPageSize / 8; // This many bytes to store 1 bit per cell.
 
 class CellPages
 {
 public:
-	bool Load(const char* filename);
+	bool LoadFile(const char* filename);
+	bool LoadStdin();
 
 	void SetCellAlive(int64_t cellX, int64_t cellY, bool alive);
 	bool GetCellAlive(int64_t cellX, int64_t cellY) const;

@@ -13,11 +13,19 @@ int main(int argc, char** arg)
 	CellPages board;
 
 	// Load the data
-	if (!board.Load("input.life"))
+#if 0
+	if (!board.LoadFile("input.life"))
 	{
-		printf("Could not load file\n");
+		printf("Could not load board from file\n");
 		return 1;
 	}
+#else
+	if (!board.LoadStdin())
+	{
+		printf("Could not load board from stdin\n");
+		return 1;
+	}
+#endif
 
 	// Simulate
 	for (int i = 0; i < c_numSimulationSteps; ++i)
@@ -28,8 +36,3 @@ int main(int argc, char** arg)
 
 	return 0;
 }
-/*
-TODO:
-* need to read from stdin, not a file. is there a way to pipe a file to this as stdin?
-* scan this code before you call it g2g
-*/

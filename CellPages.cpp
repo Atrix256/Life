@@ -3,8 +3,9 @@
 #include <algorithm>
 #include <fstream>
 #include <string>
+#include <iostream>
 
-// Some anonymous namespace non members, so they can be defined here privately, and be inlined
+// Some anonymous namespace functions, so they can be defined here privately, and be inlined in this file
 namespace
 {
 	inline void CellIndexToPageIndex(int64_t cellX, int64_t cellY, int64_t& pageX, int64_t& pageY)
@@ -25,7 +26,7 @@ namespace
 	}
 }
 
-bool CellPages::Load(const char* filename)
+bool CellPages::LoadFile(const char* filename)
 {
 	// try and open the file
 	std::ifstream file(filename);
@@ -48,7 +49,7 @@ bool CellPages::Load(const char* filename)
 			}
 			gotHeader = true;
 		}
-		// NOTE: unsure if empty lines are allowed per the spec, but we filter them out. Maybe should also trim trailing and following whitespace before this check, which would make white space only lines into empty lines.
+		// NOTE: unsure if empty lines are allowed per the spec, but we filter them out. We could also trim trailing and following whitespace before this check, which would make white space only lines into empty lines.
 		else if (!line.empty())
 		{
 			int64_t cellX, cellY;
@@ -64,6 +65,42 @@ bool CellPages::Load(const char* filename)
 	}
 
 	file.close();
+	return ret;
+}
+
+bool CellPages::LoadStdin()
+{
+	// NOTE: we could combine this logic with LoadFile() if we wanted to reduce redundancy. Leaving it as is though.
+
+	// Read from stdin line by line
+	bool ret = true;
+	std::string line;
+	bool gotHeader = false;
+	while (std::getline(std::cin, line))
+	{
+		if (!gotHeader)
+		{
+			if (line != "#Life 1.06")
+			{
+				printf("Invalid file format: Bad header\n");
+				ret = false;
+				break;
+			}
+			gotHeader = true;
+		}
+		// NOTE: unsure if empty lines are allowed per the spec, but we filter them out. Maybe should also trim trailing and following whitespace before this check, which would make white space only lines into empty lines.
+		else if (!line.empty())
+		{
+			int64_t cellX, cellY;
+			if (sscanf_s(line.c_str(), "%zi %zi", &cellX, &cellY) != 2)
+			{
+				printf("Invalid file format: Bad cell coordinates\n");
+				ret = false;
+				break;
+			}
+			SetCellAlive(cellX, cellY, true);
+		}
+	}
 	return ret;
 }
 
@@ -223,7 +260,7 @@ int CellPages::GetNeighborCount(int64_t cellX, int64_t cellY) const
 
 void CellPages::Simulate()
 {
-	// Note: this could be more efficient by working with the pages more directly, since the helpers do a lot of redundant work per call, but it would be more complex code.
+	// Note: this could be more efficient by working with the pages more directly, since the helpers do a lot of redundant work per call, but it would be more complex code. Should be done if needed, but otherwise, readability is nice.
 	CellPages newState;
 
 	// Simulate from the current state into the new state
