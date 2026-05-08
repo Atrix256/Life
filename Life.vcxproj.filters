@@ -7,4 +7,7 @@
   <ItemGroup>
     <ClInclude Include="CellPages.h" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="input.life" />
+  </ItemGroup>
 </Project>

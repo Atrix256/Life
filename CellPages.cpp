@@ -4,6 +4,24 @@
 #include <fstream>
 #include <string>
 
+// Some static non members, so they can be defined here in the CPP and be inlined
+static inline void CellIndexToPageIndex(int64_t cellX, int64_t cellY, int64_t& pageX, int64_t& pageY)
+{
+	// Handle negative values
+	pageX = (cellX >= 0) ? cellX / c_cellPageSize : (cellX - c_cellPageSize + 1) / c_cellPageSize;
+	pageY = (cellY >= 0) ? cellY / c_cellPageSize : (cellY - c_cellPageSize + 1) / c_cellPageSize;
+}
+
+static inline void CellIndexToByteAndBitIndex(int64_t cellX, int64_t cellY, int64_t& byteIndex, int64_t& bitIndex)
+{
+	// For negative coordinates, C++ modulo returns negative, so we need to normalize to [0, c_cellPageSize)
+	int64_t cellXInPage = ((cellX % c_cellPageSize) + c_cellPageSize) % c_cellPageSize;
+	int64_t cellYInPage = ((cellY % c_cellPageSize) + c_cellPageSize) % c_cellPageSize;
+	int64_t cellIndex = cellYInPage * c_cellPageSize + cellXInPage;
+	byteIndex = cellIndex / 8;
+	bitIndex = cellIndex % 8;
+}
+
 CellPages::~CellPages()
 {
 	// Free allocated memory
@@ -58,8 +76,8 @@ bool CellPages::Load(const char* filename)
 CellPages::CellPage* CellPages::GetPageForCell(int64_t cellX, int64_t cellY) const
 {
 	// calculate what page the cell would be on
-	int64_t pageX = cellX / c_cellPageSize;
-	int64_t pageY = cellY / c_cellPageSize;
+	int64_t pageX, pageY;
+	CellIndexToPageIndex(cellX, cellY, pageX, pageY);
 
 	// binary search on pageX to see where to start looking for pageY
 	auto it = std::lower_bound(m_cellPages.begin(), m_cellPages.end(), pageX,
@@ -83,7 +101,7 @@ CellPages::CellPage* CellPages::GetPageForCell(int64_t cellX, int64_t cellY) con
 	return nullptr;
 }
 
-bool CellPages::GetCellAlive(int64_t cellX, int64_t cellY)
+bool CellPages::GetCellAlive(int64_t cellX, int64_t cellY) const
 {
 	// Get the page that our cell is on
 	CellPage* page = GetPageForCell(cellX, cellY);
@@ -93,9 +111,9 @@ bool CellPages::GetCellAlive(int64_t cellX, int64_t cellY)
 		return false;
 
 	// Return whether the cell is alive or not by returning the value of the bit for that cell in the page.
-	int64_t cellIndex = (cellY % c_cellPageSize) * c_cellPageSize + (cellX % c_cellPageSize);
-	int64_t byteIndex = cellIndex / 8;
-	int64_t bitIndex = cellIndex % 8;
+	int64_t byteIndex = 0;
+	int64_t bitIndex = 0;
+	CellIndexToByteAndBitIndex(cellX, cellY, byteIndex, bitIndex);
 	return (page->cells[byteIndex] & (1 << bitIndex)) != 0;
 }
 
@@ -112,8 +130,7 @@ void CellPages::SetCellAlive(int64_t cellX, int64_t cellY, bool alive)
 		{
 			// Make a new page, setting the pageX and pageY and setting all cells inside to dead
 			CellPage* newPage = new CellPage();
-			newPage->pageX = cellX / c_cellPageSize;
-			newPage->pageY = cellY / c_cellPageSize;
+			CellIndexToPageIndex(cellX, cellY, newPage->pageX, newPage->pageY);
 			memset(newPage->cells, 0, c_bytesPerPage);
 
 			// Add the new page to the list, in the proper location
@@ -132,9 +149,9 @@ void CellPages::SetCellAlive(int64_t cellX, int64_t cellY, bool alive)
 		}
 
 		// Set the cell to alive
-		int64_t cellIndex = (cellY % c_cellPageSize) * c_cellPageSize + (cellX % c_cellPageSize);
-		int64_t byteIndex = cellIndex / 8;
-		int64_t bitIndex = cellIndex % 8;
+		int64_t byteIndex = 0;
+		int64_t bitIndex = 0;
+		CellIndexToByteAndBitIndex(cellX, cellY, byteIndex, bitIndex);
 		page->cells[byteIndex] |= (1 << bitIndex);
 	}
 	// Else we are trying to make a cell be dead
@@ -145,14 +162,37 @@ void CellPages::SetCellAlive(int64_t cellX, int64_t cellY, bool alive)
 			return;
 
 		// Set the bit for that cell in the page to 0
-		int64_t cellIndex = (cellY % c_cellPageSize) * c_cellPageSize + (cellX % c_cellPageSize);
-		int64_t byteIndex = cellIndex / 8;
-		int64_t bitIndex = cellIndex % 8;
+		int64_t byteIndex = 0;
+		int64_t bitIndex = 0;
+		CellIndexToByteAndBitIndex(cellX, cellY, byteIndex, bitIndex);
 		page->cells[byteIndex] &= ~(1 << bitIndex);
 
 		// Note: we could scan cells to see if the page now has all dead cells, and if so, remove it from the list.
 		// Or we could have a function called "PruneDeadPages" that we call every frame or every N frames.
 		// Or perhaps, we check M pages every N frames to keep from having a performance spike every N frames.
 		// For simplicity, we will let dead pages stick around and not worry about it for now.
+	}
+}
+
+void CellPages::Print() const
+{
+	printf("#Life 1.06\n");
+
+	for (const CellPage* page : m_cellPages)
+	{
+		for (int64_t cellYInPage = 0; cellYInPage < c_cellPageSize; ++cellYInPage)
+		{
+			for (int64_t cellXInPage = 0; cellXInPage < c_cellPageSize; ++cellXInPage)
+			{
+				int64_t cellX = page->pageX * c_cellPageSize + cellXInPage;
+				int64_t cellY = page->pageY * c_cellPageSize + cellYInPage;
+				if (GetCellAlive(cellX, cellY))
+					printf("%zi %zi\n", cellX, cellY);
+
+				// Note: we could do this more performantly by looping through the cell bytes in the page, and only scanning the bits if it was non zero.
+				// If we expected to have a lot of empty space, instead of using unsigned char for the cells, we could use uint64_t so that when we saw a zero
+				// we skipped more bits at a time.
+			}
+		}
 	}
 }

@@ -1,5 +1,7 @@
 #pragma once
 
+// Using some STL for a simpler implementation.
+// Engines have their own data types and algorithms, or their own STL implementations that are more friendly for game dev, so would use those when working in an engine.
 #include <vector>
 
 // These parameters could be tuned for memory vs speed based on profiling usage cases.
@@ -15,7 +17,9 @@ public:
 	bool Load(const char* filename);
 
 	void SetCellAlive(int64_t cellX, int64_t cellY, bool alive);
-	bool GetCellAlive(int64_t cellX, int64_t cellY);
+	bool GetCellAlive(int64_t cellX, int64_t cellY) const;
+
+	void Print() const;
 
 private:
 	// A page contains c_cellPageSize x c_cellPageSize cells.
