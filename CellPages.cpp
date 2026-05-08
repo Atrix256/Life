@@ -86,7 +86,7 @@ const CellPages::CellPage* CellPages::GetPageForCell(int64_t cellX, int64_t cell
 	while (it != m_cellPages.end() && it->pageX == pageX)
 	{
 		// If we found it, we are done
-		if (pageY == pageY)
+		if (it->pageY == pageY)
 			return &(*it);
 
 		++it;
@@ -172,6 +172,9 @@ void CellPages::SetCellAlive(int64_t cellX, int64_t cellY, bool alive)
 		// Or we could have a function called "PruneDeadPages" that we call every frame or every N frames.
 		// Or perhaps, we check M pages every N frames to keep from having a performance spike every N frames.
 		// For simplicity, we will let dead pages stick around and not worry about it for now.
+		//
+		// In practice, dead pages get removed during the simulate step, since it makes a whole new board each simulation step.
+		// Also in practice, we never need to set a cell to dead, since simulate will do a no-op to make a cell dead. We could remove the bool from this function and get rid of the false path.
 	}
 }
 
@@ -226,9 +229,19 @@ void CellPages::Simulate()
 	// Simulate from the current state into the new state
 	for (const CellPage& page : m_cellPages)
 	{
-		for (int64_t cellYInPage = 0; cellYInPage < c_cellPageSize; ++cellYInPage)
+		// loop through every cell in the page to see what the new state should be.
+		// Also include an extra right of 1 cell around the page in case edge cells should spawn new cells into an empty page.
+		// The cells around a page may belong to a different page, which means they will be processed redundantly, but it won't be incorrect since running the same cell multiple times will give the same answer.
+		// This could be made more efficient though. Maybe figuring out the 8 neighbor pages right here, and then only do the border cells which aren't part of a neighbor page.
+		//
+		// Note: it would be trivial to parallelize this outer y loop across threads.
+		// Each singular cell gathers data from a read only source, to write a single output value.
+		// This could be a problem if two threads using the same cell byte tried to write at the same time, and make a race condition
+		// (could use an atomic operation maybe) but that won't happen because the x axis is not multithreaded, only the y axis.
+		// OMP could do that in a single line with a pragma.
+		for (int64_t cellYInPage = -1; cellYInPage <= c_cellPageSize; ++cellYInPage)
 		{
-			for (int64_t cellXInPage = 0; cellXInPage < c_cellPageSize; ++cellXInPage)
+			for (int64_t cellXInPage = -1; cellXInPage <= c_cellPageSize; ++cellXInPage)
 			{
 				int64_t cellX = page.pageX * c_cellPageSize + cellXInPage;
 				int64_t cellY = page.pageY * c_cellPageSize + cellYInPage;
@@ -237,14 +250,22 @@ void CellPages::Simulate()
 
 				switch (neighborCount)
 				{
-					// active cells with 2 neighbors stay active. inactive cells with 2 neighbors stay inactive.
-					case 2: newState.SetCellAlive(cellX, cellY, GetCellAlive(cellX, cellY)); break;
+					// active cells with 2 neighbors stay active.
+					// inactive cells with 2 neighbors stay inactive. We don't need to do that though, since newState initializes to all cells being inactive
+					// newState defaults all cells to inactive, so we only need to turn cells on.
+					case 2:
+					{
+						if (GetCellAlive(cellX, cellY))
+							newState.SetCellAlive(cellX, cellY, true);
+						break;
+					}
 
 					// Cells with 3 neighbors become or stay active
 					case 3: newState.SetCellAlive(cellX, cellY, true); break;
 
-					// Cells with < 2 or > 3 neighbors become inactive
-					default: newState.SetCellAlive(cellX, cellY, false); break;
+					// Cells with < 2 or > 3 neighbors become inactive.
+					// newState defualts all cells to inactive, so we don't need to do that.
+					//default: newState.SetCellAlive(cellX, cellY, false); break;
 				}
 			}
 		}
